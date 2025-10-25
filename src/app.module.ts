@@ -4,6 +4,7 @@ import { AppService } from './app.service';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import dataSource, { dataSourceOptions } from './config/typeorm.config';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   imports: [
@@ -20,7 +21,8 @@ import dataSource, { dataSourceOptions } from './config/typeorm.config';
         synchronize: process.env.NODE_ENV === 'development',
       }),
       inject: [ConfigService]
-    })
+    }),
+    AuthModule
   ],
   controllers: [AppController],
   providers: [AppService],
