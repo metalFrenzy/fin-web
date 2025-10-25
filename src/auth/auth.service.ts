@@ -21,7 +21,7 @@ export class AuthService {
     private walletRepository: Repository<Wallet>,
     private jwtService: JwtService,
     private dataSource: DataSource,
-  ) {}
+  ) { }
 
   async signup(signupDto: SignupDto) {
     const { email, password, role } = signupDto;
@@ -76,7 +76,9 @@ export class AuthService {
         token,
       };
     } catch (error) {
-      await queryRunner.rollbackTransaction();
+      if (queryRunner.isTransactionActive) {
+        await queryRunner.rollbackTransaction();
+      }
       throw error;
     } finally {
       await queryRunner.release();
