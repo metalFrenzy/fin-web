@@ -26,7 +26,7 @@ export class WalletService {
         }
     }
 
-    async desposit(userId: string, amount: number) {
+    async deposit(userId: string, amount: number) {
         const queryRunner = this.dataSource.createQueryRunner();
         await queryRunner.connect();
         await queryRunner.startTransaction();
