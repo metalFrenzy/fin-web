@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import dataSource, { dataSourceOptions } from './config/typeorm.config';
 import { AuthModule } from './auth/auth.module';
 import { WalletModule } from './wallet/wallet.module';
+import { ProductsModule } from './products/products.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { WalletModule } from './wallet/wallet.module';
     }),
     AuthModule,
     WalletModule,
+    ProductsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
