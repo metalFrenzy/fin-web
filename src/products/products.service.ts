@@ -58,7 +58,7 @@ export class ProductsService {
             merchantId,
         })
 
-        const savedProduct = await this.productRepository.save(product);
+        const savedProduct = await this.productRepository.save(newProduct);
 
         return {
             message: 'Product created successfully',
