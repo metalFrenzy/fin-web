@@ -155,5 +155,87 @@ export class OrdersService {
         }
     }
 
+    async getUserOrders(userId: string) {
+        const orders = await this.orderRepository.find({
+            where: { userId },
+            relations: ['product', 'merchant'],
+            order: { createdAt: 'DESC' },
+        })
+        return orders.map((order) => ({
+            id: order.id,
+            product: {
+                id: order.product.id,
+                name: order.product.name,
+            },
+            merchant: {
+                id: order.merchant.id,
+                email: order.merchant.email,
+            },
+            amount: Number(order.amount),
+            status: order.status,
+            paymentMethod: order.paymentMethod,
+            createdAt: order.createdAt,
+        }));
+    }
 
+    async getMerchantOrders(merchantId: string) {
+        const orders = await this.orderRepository.find({
+            where: { merchantId },
+            relations: ['product', 'user'],
+            order: { createdAt: 'DESC' },
+        });
+
+        return orders.map((order) => ({
+            id: order.id,
+            product: {
+                id: order.product.id,
+                name: order.product.name,
+            },
+            buyer: {
+                id: order.user.id,
+                email: order.user.email,
+            },
+            amount: Number(order.amount),
+            status: order.status,
+            paymentMethod: order.paymentMethod,
+            createdAt: order.createdAt,
+        }));
+    }
+
+    async getOrderById(orderId: string, userId: string) {
+        const order = await this.orderRepository.findOne({
+            where: { id: orderId },
+            relations: ['product', 'merchant', 'user'],
+        });
+
+        if (!order) {
+            throw new NotFoundException('Oder not found');
+        }
+        if (order.userId !== userId && order.merchantId !== userId) {
+            throw new BadRequestException('You are not authorized to view this order');
+        }
+
+        return {
+            id: order.id,
+            product: {
+                id: order.product.id,
+                name: order.product.name,
+            },
+            merchant: {
+                id: order.merchant.id,
+                email: order.merchant.email,
+            },
+            buyer: {
+                id: order.user.id,
+                email: order.user.email,
+            },
+            amount: Number(order.amount),
+            status: order.status,
+            PaymentMethod: order.paymentMethod,
+            metaData: order.metadata,
+            createdAt: order.createdAt,
+        }
+    }
 }
+
+
