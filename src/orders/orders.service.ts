@@ -47,10 +47,12 @@ export class OrdersService {
                 throw new BadRequestException('Product out of Stock')
             }
 
-            const userWallet = await queryRunner.manager.findOne(Wallet, {
-                where: { id: userId },
-                lock: { mode: 'pessimistic_write' }
-            })
+            const userWallet = await queryRunner.manager
+                .createQueryBuilder(Wallet, 'wallet')
+                .where('wallet.userId = :userId', { userId })
+                .setLock('pessimistic_write')
+                .getOne();
+
             if (!userWallet) {
                 throw new NotFoundException('Wallet not found');
             }
@@ -63,10 +65,12 @@ export class OrdersService {
                 );
             }
 
-            const merchantWallet = await queryRunner.manager.findOne(Wallet, {
-                where: { id: product.merchantId },
-                lock: { mode: 'pessimistic_write' }
-            });
+            const merchantWallet = await queryRunner.manager
+                .createQueryBuilder(Wallet, 'wallet')
+                .where('wallet.userId = :userId', { userId: product.merchantId })
+                .setLock('pessimistic_write')
+                .getOne();
+
 
             if (!merchantWallet) {
                 throw new NotFoundException('Merchant wallet not found');
@@ -76,7 +80,7 @@ export class OrdersService {
             userWallet.balance = userBalance - price;
             await queryRunner.manager.save(userWallet);
 
-            const merchantBalanceBefore = merchantWallet.balance
+            const merchantBalanceBefore = Number(merchantWallet.balance); 
             merchantWallet.balance = merchantBalanceBefore + price;
             await queryRunner.manager.save(merchantWallet);
 
@@ -122,7 +126,7 @@ export class OrdersService {
                 metadata: {
                     orderId: savedOrder.id,
                     productId: product.id,
-                    productNAme: product.name,
+                    productName: product.name,
                     buyerId: userId,
                 }
             });
