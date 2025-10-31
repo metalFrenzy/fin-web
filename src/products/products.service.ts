@@ -1,123 +1,177 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Inject,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { Product } from './entites/product.entity';
-import { Repository } from 'typeorm/repository/Repository';
 import { CreateProductDto, UpdateProductDto } from './dto/product.dto';
+
 
 @Injectable()
 export class ProductsService {
-    constructor(@InjectRepository(Product) private productRepository: Repository<Product>) { }
+  constructor(
+    @InjectRepository(Product)
+    private productRepository: Repository<Product>,
+    @Inject(CACHE_MANAGER)
+    private cacheManager: Cache,
+  ) {}
 
-    async findAll() {
-        const products = await this.productRepository.find({
-            order: { createdAt: 'DESC' },
-            relations: ['merchant'],
-        });
+  private readonly PRODUCTS_LIST_KEY = 'products:list';
+  private getProductKey(id: string) {
+    return `product:${id}`;
+  }
 
-        return products.map((product) => ({
-            id: product.id,
-            name: product.name,
-            price: Number(product.price),
-            availableUnits: product.availableUnits,
-            merchant: {
-                id: product.merchant.id,
-                email: product.merchant.email,
-            },
-            createdAt: product.createdAt,
-        }));
+  async create(merchantId: string, createProductDto: CreateProductDto) {
+    const product = this.productRepository.create({
+      ...createProductDto,
+      merchantId,
+    });
+
+    const savedProduct = await this.productRepository.save(product);
+    await this.cacheManager.del(this.PRODUCTS_LIST_KEY);
+
+    return {
+      message: 'Product created successfully',
+      product: {
+        id: savedProduct.id,
+        name: savedProduct.name,
+        price: Number(savedProduct.price),
+        availableUnits: savedProduct.availableUnits,
+        merchantId: savedProduct.merchantId,
+        createdAt: savedProduct.createdAt,
+      },
+    };
+  }
+
+  async findAll() {
+    const cachedProducts = await this.cacheManager.get(this.PRODUCTS_LIST_KEY);
+
+    if (cachedProducts) {
+      console.log('✅ Cache HIT: Products list');
+      return cachedProducts;
     }
 
-    async findById(productId: string) {
-        const product = await this.productRepository.findOne({
-            where: { id: productId },
-            relations: ['merchant'],
-        });
+    console.log('❌ Cache MISS: Products list - fetching from DB');
 
-        if (!product) {
-            throw new NotFoundException('product not found');
-        }
+    const products = await this.productRepository.find({
+      order: { createdAt: 'DESC' },
+      relations: ['merchant'],
+    });
 
-        return {
-            id: product.id,
-            name: product.name,
-            price: Number(product.price),
-            availableUnits: product.availableUnits,
-            merchant: {
-                id: product.merchant.id,
-                email: product.merchant.email,
-            },
-            createdAt: product.createdAt,
-            updatedAt: product.updatedAt,
-        }
+    const formattedProducts = products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      availableUnits: product.availableUnits,
+      merchant: {
+        id: product.merchant.id,
+        email: product.merchant.email,
+      },
+      createdAt: product.createdAt,
+    }));
+
+    await this.cacheManager.set(this.PRODUCTS_LIST_KEY, formattedProducts);
+
+    return formattedProducts;
+  }
+
+  async findOne(id: string) {
+    const cacheKey = this.getProductKey(id);
+
+    const cachedProduct = await this.cacheManager.get(cacheKey);
+
+    if (cachedProduct) {
+      console.log(`✅ Cache HIT: Product ${id}`);
+      return cachedProduct;
     }
 
+    console.log(`❌ Cache MISS: Product ${id} - fetching from DB`);
 
-    async create(merchantId: string, product: CreateProductDto) {
-        const newProduct = this.productRepository.create({
-            ...product,
-            merchantId,
-        })
+    const product = await this.productRepository.findOne({
+      where: { id },
+      relations: ['merchant'],
+    });
 
-        const savedProduct = await this.productRepository.save(newProduct);
-
-        return {
-            message: 'Product created successfully',
-            product: {
-                id: savedProduct.id,
-                name: savedProduct.name,
-                price: Number(savedProduct.price),
-                availableUnits: savedProduct.availableUnits,
-                merchantId: savedProduct.merchantId,
-                createdAt: savedProduct.createdAt,
-            },
-        };
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
 
-    async updateProduct(merchantId: string, updatedProduct: UpdateProductDto, productId: string) {
-        const product = await this.productRepository.findOne({
-            where: { id: productId }
-        })
+    const formattedProduct = {
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      availableUnits: product.availableUnits,
+      merchant: {
+        id: product.merchant.id,
+        email: product.merchant.email,
+      },
+      createdAt: product.createdAt,
+      updatedAt: product.updatedAt,
+    };
 
-        if (!product) {
-            throw new NotFoundException('Product not found');
-        }
+    await this.cacheManager.set(cacheKey, formattedProduct, 600);
 
-        if (product.merchantId !== merchantId) {
-            throw new ForbiddenException('You can only update your own products');
-        }
+    return formattedProduct;
+  }
 
-        Object.assign(product, updatedProduct)
+  async update(
+    id: string,
+    merchantId: string,
+    updateProductDto: UpdateProductDto,
+  ) {
+    const product = await this.productRepository.findOne({
+      where: { id },
+    });
 
-        const newProduct = await this.productRepository.save(product);
-
-        return {
-            message: 'Product updated successfully',
-            product: {
-                id: newProduct.id,
-                name: newProduct.name,
-                price: Number(newProduct.price),
-                availableUnits: newProduct.availableUnits,
-                updatedAt: newProduct.updatedAt,
-            },
-        };
+    if (!product) {
+      throw new NotFoundException('Product not found');
     }
 
-    async findByMerchant(merchantId: string) {
-        const products = await this.productRepository.find({
-            where: { merchantId },
-            order: { createdAt: 'DESC' },
-        });
-
-        return products.map((product) => ({
-            id: product.id,
-            name: product.name,
-            price: Number(product.price),
-            availableUnits: product.availableUnits,
-            createdAt: product.createdAt,
-        }));
+    if (product.merchantId !== merchantId) {
+      throw new ForbiddenException('You can only update your own products');
     }
 
+    Object.assign(product, updateProductDto);
+
+    const updatedProduct = await this.productRepository.save(product);
+
+    await this.cacheManager.del(this.PRODUCTS_LIST_KEY);
+    await this.cacheManager.del(this.getProductKey(id));
+
+    return {
+      message: 'Product updated successfully',
+      product: {
+        id: updatedProduct.id,
+        name: updatedProduct.name,
+        price: Number(updatedProduct.price),
+        availableUnits: updatedProduct.availableUnits,
+        updatedAt: updatedProduct.updatedAt,
+      },
+    };
+  }
+
+  async findByMerchant(merchantId: string) {
+    const products = await this.productRepository.find({
+      where: { merchantId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      availableUnits: product.availableUnits,
+      createdAt: product.createdAt,
+    }));
+  }
+
+  async invalidateProductCache(productId: string) {
+    await this.cacheManager.del(this.getProductKey(productId));
+    await this.cacheManager.del(this.PRODUCTS_LIST_KEY);
+  }
 }
-
-
-
