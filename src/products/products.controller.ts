@@ -60,6 +60,6 @@ export class ProductsController {
         @CurrentUser() user: any,
         @Body() updateProductDto: UpdateProductDto,
     ) {
-        return this.productsService.updateProduct(id, updateProductDto, user.id,)
+        return this.productsService.updateProduct(id, user.id, updateProductDto)
     }
 }

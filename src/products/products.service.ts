@@ -80,7 +80,7 @@ export class ProductsService {
     return formattedProducts;
   }
 
-  async findOne(id: string) {
+  async findById(id: string) {
     const cacheKey = this.getProductKey(id);
 
     const cachedProduct = await this.cacheManager.get(cacheKey);
@@ -119,7 +119,7 @@ export class ProductsService {
     return formattedProduct;
   }
 
-  async update(
+  async updateProduct(
     id: string,
     merchantId: string,
     updateProductDto: UpdateProductDto,
