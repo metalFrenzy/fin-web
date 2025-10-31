@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ProductsModule } from './products/products.module';
 import { OrdersModule } from './orders/orders.module';
+import { CacheModule } from './cache/cache.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { OrdersModule } from './orders/orders.module';
     WalletModule,
     ProductsModule,
     OrdersModule,
+    CacheModule,
   ],
   controllers: [AppController],
   providers: [AppService],
