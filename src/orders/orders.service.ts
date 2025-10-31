@@ -223,7 +223,7 @@ export class OrdersService {
     }));
   }
 
-  async getOrder(orderId: string, userId: string) {
+  async getOrderById(orderId: string, userId: string) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
       relations: ['product', 'merchant', 'user'],
