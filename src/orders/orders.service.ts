@@ -1,3 +1,4 @@
+// src/orders/orders.service.ts
 import {
   Injectable,
   NotFoundException,
@@ -8,15 +9,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
-import { Order } from './entites/order.entity';
+import { OrderStatus } from 'src/common/enum/order-status';
+import { PaymentMethod } from 'src/common/enum/payment-method.enum';
+import { TransactionType } from 'src/common/enum/transaction-type.enum';
 import { Product } from 'src/products/entites/product.entity';
 import { WalletTransaction } from 'src/wallet/entities/wallet-transactions.entity';
 import { Wallet } from 'src/wallet/entities/wallet.entity';
 import { CreateOrderDto } from './dto/order.dto';
-import { PaymentMethod } from 'src/common/enum/payment-method.enum';
-import { TransactionType } from 'src/common/enum/transaction-type.enum';
-import { OrderStatus } from 'src/common/enum/order-status';
-
+import { Order } from './entites/order.entity';
 
 @Injectable()
 export class OrdersService {
@@ -34,22 +34,26 @@ export class OrdersService {
     private cacheManager: Cache,
   ) {}
 
+  // Create order with wallet payment
   async createOrder(userId: string, createOrderDto: CreateOrderDto) {
     const { productId, paymentMethod } = createOrderDto;
 
     if (paymentMethod === PaymentMethod.WALLET) {
       return this.createWalletOrder(userId, productId);
     } else {
+      // Gateway payment - we'll implement this later with Stripe
       throw new BadRequestException('Gateway payment not yet implemented');
     }
   }
 
+  // Wallet payment flow
   private async createWalletOrder(userId: string, productId: string) {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {
+      // 1. Get product with pessimistic lock (prevent race conditions)
       const product = await queryRunner.manager.findOne(Product, {
         where: { id: productId },
         lock: { mode: 'pessimistic_write' },
@@ -59,9 +63,12 @@ export class OrdersService {
         throw new NotFoundException('Product not found');
       }
 
+      // 2. Check if product is available
       if (product.availableUnits < 1) {
         throw new BadRequestException('Product is out of stock');
       }
+
+      // 3. Get user's wallet with lock
       const userWallet = await queryRunner.manager
         .createQueryBuilder(Wallet, 'wallet')
         .where('wallet.userId = :userId', { userId })
@@ -75,12 +82,14 @@ export class OrdersService {
       const price = Number(product.price);
       const userBalance = Number(userWallet.balance);
 
+      // 4. Check if user has sufficient balance
       if (userBalance < price) {
         throw new BadRequestException(
           `Insufficient balance. Required: $${price}, Available: $${userBalance}`,
         );
       }
 
+      // 5. Get merchant's wallet with lock
       const merchantWallet = await queryRunner.manager
         .createQueryBuilder(Wallet, 'wallet')
         .where('wallet.userId = :userId', { userId: product.merchantId })
@@ -91,16 +100,21 @@ export class OrdersService {
         throw new NotFoundException('Merchant wallet not found');
       }
 
+      // 6. Deduct from user's wallet
       const userBalanceBefore = userBalance;
       userWallet.balance = userBalance - price;
       await queryRunner.manager.save(userWallet);
 
+      // 7. Add to merchant's wallet
       const merchantBalanceBefore = Number(merchantWallet.balance);
       merchantWallet.balance = merchantBalanceBefore + price;
       await queryRunner.manager.save(merchantWallet);
+
+      // 8. Decrease product stock
       product.availableUnits -= 1;
       await queryRunner.manager.save(product);
 
+      // 9. Create order
       const order = queryRunner.manager.create(Order, {
         userId,
         productId: product.id,
@@ -114,6 +128,7 @@ export class OrdersService {
       });
       const savedOrder = await queryRunner.manager.save(order);
 
+      // 10. Create wallet transaction for user (purchase)
       const userTransaction = queryRunner.manager.create(WalletTransaction, {
         walletId: userWallet.id,
         type: TransactionType.PURCHASE,
@@ -129,6 +144,7 @@ export class OrdersService {
       });
       await queryRunner.manager.save(userTransaction);
 
+      // 11. Create wallet transaction for merchant (earning)
       const merchantTransaction = queryRunner.manager.create(
         WalletTransaction,
         {
@@ -148,6 +164,7 @@ export class OrdersService {
       );
       await queryRunner.manager.save(merchantTransaction);
 
+      // 12. Commit transaction
       await queryRunner.commitTransaction();
 
       return {
@@ -175,6 +192,7 @@ export class OrdersService {
     }
   }
 
+  // Get user's orders
   async getUserOrders(userId: string) {
     const orders = await this.orderRepository.find({
       where: { userId },
@@ -199,6 +217,7 @@ export class OrdersService {
     }));
   }
 
+  // Get merchant's sales
   async getMerchantOrders(merchantId: string) {
     const orders = await this.orderRepository.find({
       where: { merchantId },
@@ -223,6 +242,7 @@ export class OrdersService {
     }));
   }
 
+  // Get single order
   async getOrderById(orderId: string, userId: string) {
     const order = await this.orderRepository.findOne({
       where: { id: orderId },
@@ -232,6 +252,8 @@ export class OrdersService {
     if (!order) {
       throw new NotFoundException('Order not found');
     }
+
+    // Check if user owns this order or is the merchant
     if (order.userId !== userId && order.merchantId !== userId) {
       throw new BadRequestException('You do not have access to this order');
     }
